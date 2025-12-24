@@ -33,6 +33,20 @@ ros2 run laser_scan_normalizer laser_scan_normalizer_node
 ros2 component standalone laser_scan_normalizer laser_scan_normalizer::LaserScanNormalizerROS2
 ```
 
+## トピックのリマップ
+
+### ROS1
+
+```bash
+rosrun laser_scan_normalizer laser_scan_normalizer_node scan:=/lidar/scan scan_normalized:=/lidar/scan_normalized
+```
+
+### ROS2
+
+```bash
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -r scan:=/lidar/scan -r scan_normalized:=/lidar/scan_normalized
+```
+
 ## ビルド方法
 
 ### ROS1
