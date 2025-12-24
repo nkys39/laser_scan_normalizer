@@ -38,18 +38,14 @@ ros2 component standalone laser_scan_normalizer laser_scan_normalizer::LaserScan
 ### ROS1
 
 ```bash
-cd ~/catkin_ws/src
-git clone <this_repository>
-cd ..
+cd ~/catkin_ws
 catkin_make
 ```
 
 ### ROS2
 
 ```bash
-cd ~/ros2_ws/src
-git clone <this_repository>
-cd ..
+cd ~/ros2_ws
 colcon build --packages-select laser_scan_normalizer
 ```
 
