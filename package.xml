@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>laser_scan_normalizer</name>
+  <version>0.0.1</version>
+  <description>A ROS1/ROS2 compatible package for processing and normalizing LaserScan messages</description>
+
+  <maintainer email="todo@example.com">TODO</maintainer>
+  <license>MIT</license>
+
+  <!-- ROS1 dependencies -->
+  <buildtool_depend condition="$ROS_VERSION == 1">catkin</buildtool_depend>
+  <depend condition="$ROS_VERSION == 1">roscpp</depend>
+
+  <!-- ROS2 dependencies -->
+  <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake_auto</buildtool_depend>
+  <depend condition="$ROS_VERSION == 2">rclcpp</depend>
+  <depend condition="$ROS_VERSION == 2">rclcpp_components</depend>
+
+  <!-- Common dependencies -->
+  <depend>sensor_msgs</depend>
+
+  <export>
+    <!-- ROS1 -->
+    <build_type condition="$ROS_VERSION == 1">catkin</build_type>
+    <!-- ROS2 -->
+    <build_type condition="$ROS_VERSION == 2">ament_cmake</build_type>
+  </export>
+</package>
