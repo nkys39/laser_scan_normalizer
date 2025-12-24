@@ -1,19 +1,19 @@
 # laser_scan_normalizer
 
-A ROS1/ROS2 compatible package for processing and normalizing LaserScan messages.
+ROS1/ROS2両対応のLaserScanメッセージ処理・正規化パッケージです。
 
-## Overview
+## 概要
 
-This package provides a node that subscribes to `sensor_msgs/LaserScan` messages, applies processing/normalization, and publishes the result.
+`sensor_msgs/LaserScan`メッセージを購読し、処理・正規化を行った結果を出力するノードを提供します。
 
-## Topics
+## トピック
 
-| Name | Type | Description |
+| 名前 | 型 | 説明 |
 |------|------|-------------|
-| `scan` (input) | sensor_msgs/LaserScan | Input laser scan |
-| `scan_normalized` (output) | sensor_msgs/LaserScan | Processed laser scan |
+| `scan` (入力) | sensor_msgs/LaserScan | 入力レーザースキャン |
+| `scan_normalized` (出力) | sensor_msgs/LaserScan | 処理後のレーザースキャン |
 
-## Usage
+## 使い方
 
 ### ROS1
 
@@ -21,19 +21,19 @@ This package provides a node that subscribes to `sensor_msgs/LaserScan` messages
 rosrun laser_scan_normalizer laser_scan_normalizer_node
 ```
 
-### ROS2 (Standalone Node)
+### ROS2 (スタンドアロンノード)
 
 ```bash
 ros2 run laser_scan_normalizer laser_scan_normalizer_node
 ```
 
-### ROS2 (Component)
+### ROS2 (コンポーネント)
 
 ```bash
 ros2 component standalone laser_scan_normalizer laser_scan_normalizer::LaserScanNormalizerROS2
 ```
 
-## Build
+## ビルド方法
 
 ### ROS1
 
@@ -53,6 +53,6 @@ cd ..
 colcon build --packages-select laser_scan_normalizer
 ```
 
-## License
+## ライセンス
 
 MIT License
