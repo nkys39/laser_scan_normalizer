@@ -8,8 +8,8 @@ ScanPointResamplerは、レーザースキャンの点群を均等な間隔に�
 ## 機能
 
 - 点群を指定した距離間隔でリサンプリング
-- 点間隔が大きい場合は補間点を生成（方式Aのみ）
 - 点間隔が小さい場合は間引き
+- 点間隔が大きい場合は補間点を生成（オプション）
 
 ## アルゴリズム
 
@@ -28,33 +28,18 @@ ScanPointResamplerは、レーザースキャンの点群を均等な間隔に�
 │   → 現在の点をそのまま追加（補間しない）         │
 ├─────────────────────────────────────────────────┤
 │ Case 3: dthreS <= 累積距離 + 点間距離 < dthreL   │
-│   → 補間点を計算して追加（方式Aのみ）            │
+│   → 補間点を計算して追加（enable_interpolation時）│
 └─────────────────────────────────────────────────┘
   ↓
 出力: リサンプリング済み点群
 ```
-
-### 補間点の計算（方式Aのみ）
-
-2点間(pp → cp)で補間点を生成する場合:
-
-```
-ratio = (dthreS - dis) / L
-
-np.x = pp.x + dx * ratio
-np.y = pp.y + dy * ratio
-```
-
-- `dis`: 累積距離
-- `L`: 2点間の距離
-- `dthreS`: 目標点間隔
 
 ## パラメータ
 
 | パラメータ | デフォルト値 | 説明 |
 |-----------|-------------|------|
 | `enable_resampling` | true | リサンプリングの有効/無効 |
-| `resampling_method` | "xy" | リサンプリング方式 ("xy" or "polar") |
+| `enable_interpolation` | false | 補間の有効/無効 |
 | `resampler_distance_threshold` (dthreS) | 0.05 m (5cm) | リサンプリング後の目標点間隔 |
 | `resampler_length_threshold` (dthreL) | 0.25 m (25cm) | 最大点間隔（これ以上離れた点は補間せず保持） |
 
@@ -64,35 +49,9 @@ np.y = pp.y + dy * ratio
 - `dthreS`が小さいほど密な点群になる
 - `dthreL`は不連続な領域（物体の境界など）を検出する閾値として機能
 
-## リサンプリング方式
+## リサンプリングモード
 
-### 方式A: XY座標変換方式 (`resampling_method: "xy"`)
-
-```
-入力: sensor_msgs/LaserScan
-  ↓
-1. LaserScan → XY座標変換
-   x[i] = ranges[i] * cos(angle_min + i * angle_increment)
-   y[i] = ranges[i] * sin(angle_min + i * angle_increment)
-  ↓
-2. XY座標でリサンプリング（元のアルゴリズム適用）
-   - 累積距離ベースで点を間引き/補間
-  ↓
-3. XY座標 → LaserScan変換
-   - リサンプリング後の点数に応じてangle_incrementを再計算
-   - range[i] = sqrt(x[i]^2 + y[i]^2)
-   - angle[i] = atan2(y[i], x[i])
-  ↓
-出力: sensor_msgs/LaserScan（点数が変化する可能性あり）
-```
-
-**特徴:**
-- 元のアルゴリズムを忠実に再現
-- 補間点の生成が可能
-- 座標変換のオーバーヘッドあり
-- 出力のLaserScanは点数が変化する可能性あり
-
-### 方式B: 極座標直接処理方式 (`resampling_method: "polar"`)
+### 間引きのみ (`enable_interpolation: false`) - デフォルト
 
 ```
 入力: sensor_msgs/LaserScan
@@ -111,27 +70,54 @@ np.y = pp.y + dy * ratio
 - オーバーヘッドが少ない
 - intensitiesとの対応関係を維持可能
 
-### 方式の比較
+### 補間あり (`enable_interpolation: true`)
 
-| 項目 | 方式A (xy) | 方式B (polar) |
-|------|-----------|---------------|
-| 補間 | ○ 可能 | × 不可 |
+```
+入力: sensor_msgs/LaserScan
+  ↓
+1. LaserScan → XY座標変換
+   x[i] = ranges[i] * cos(angle_min + i * angle_increment)
+   y[i] = ranges[i] * sin(angle_min + i * angle_increment)
+  ↓
+2. XY座標でリサンプリング（元のアルゴリズム適用）
+   - 累積距離ベースで点を間引き/補間
+  ↓
+3. 元グリッドに再マッピング
+   - リサンプリング後の各点の角度を計算
+   - 最近傍のグリッドインデックスにrange値を設定
+   - 他のインデックスはinfinityに設定
+  ↓
+出力: sensor_msgs/LaserScan（構造維持、歪みなし）
+```
+
+**特徴:**
+- 補間点の生成が可能
+- 元のangle_incrementグリッドを維持（歪みなし）
+- 座標変換のオーバーヘッドあり
+- intensitiesは破棄される
+
+### モードの比較
+
+| 項目 | 間引きのみ (false) | 補間あり (true) |
+|------|-------------------|-----------------|
+| 補間 | × 不可 | ○ 可能 |
 | 間引き | ○ 可能 | ○ 可能 |
-| LaserScan構造維持 | × 変化する | ○ 維持 |
-| オーバーヘッド | 大 | 小 |
-| intensities | × 破棄 | ○ 維持可能 |
-| 用途 | 高精度リサンプリング | 軽量フィルタリング |
+| LaserScan構造 | ○ 維持 | ○ 維持 |
+| 歪み | なし | なし |
+| オーバーヘッド | 小 | 大 |
+| intensities | ○ 維持可能 | × 破棄 |
+| 用途 | 高速フィルタリング | 高精度リサンプリング |
 
 ## 実装ファイル
 
 ```
 include/laser_scan_normalizer/
-├── laser_scan_normalizer.hpp      # LaserScanProcessor（方式A/B両対応）
+├── laser_scan_normalizer.hpp      # LaserScanProcessor
 └── scan_point_resampler.hpp       # ScanPointResampler（XY座標用）
 
 src/
-├── laser_scan_normalizer_ros1.cpp # ROS1ノード（パラメータ対応）
-└── laser_scan_normalizer_ros2.cpp # ROS2ノード（パラメータ対応）
+├── laser_scan_normalizer_ros1.cpp # ROS1ノード
+└── laser_scan_normalizer_ros2.cpp # ROS2ノード
 ```
 
 ## 使用例
@@ -139,15 +125,15 @@ src/
 ### ROS1
 
 ```bash
-# 方式A（デフォルト）
+# 間引きのみ（デフォルト）
 rosrun laser_scan_normalizer laser_scan_normalizer_node
 
-# 方式B
-rosrun laser_scan_normalizer laser_scan_normalizer_node _resampling_method:=polar
+# 補間あり
+rosrun laser_scan_normalizer laser_scan_normalizer_node _enable_interpolation:=true
 
 # パラメータ変更
 rosrun laser_scan_normalizer laser_scan_normalizer_node \
-  _resampling_method:=xy \
+  _enable_interpolation:=true \
   _resampler_distance_threshold:=0.03 \
   _resampler_length_threshold:=0.20
 ```
@@ -155,15 +141,15 @@ rosrun laser_scan_normalizer laser_scan_normalizer_node \
 ### ROS2
 
 ```bash
-# 方式A（デフォルト）
+# 間引きのみ（デフォルト）
 ros2 run laser_scan_normalizer laser_scan_normalizer_node
 
-# 方式B
-ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p resampling_method:=polar
+# 補間あり
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p enable_interpolation:=true
 
 # パラメータ変更
 ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args \
-  -p resampling_method:=xy \
+  -p enable_interpolation:=true \
   -p resampler_distance_threshold:=0.03 \
   -p resampler_length_threshold:=0.20
 ```

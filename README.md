@@ -38,27 +38,37 @@ ros2 component standalone laser_scan_normalizer laser_scan_normalizer::LaserScan
 | パラメータ | 型 | デフォルト | 説明 |
 |-----------|------|-----------|------|
 | `enable_resampling` | bool | true | リサンプリングの有効/無効 |
-| `resampling_method` | string | "xy" | リサンプリング方式 ("xy" or "polar") |
+| `enable_interpolation` | bool | false | 補間の有効/無効 |
 | `resampler_distance_threshold` | double | 0.05 | 目標点間隔 [m] |
 | `resampler_length_threshold` | double | 0.25 | 最大点間隔 [m] |
 
-### リサンプリング方式
+### 補間モード
 
-- **xy**: XY座標変換方式（補間あり）- 元のアルゴリズムを忠実に再現
-- **polar**: 極座標直接処理方式（間引きのみ）- LaserScanの構造を維持、オーバーヘッド小
+| enable_interpolation | 動作 | 特徴 |
+|---------------------|------|------|
+| false（デフォルト） | 間引きのみ | 高速、LaserScan構造を維持 |
+| true | 間引き＋補間 | 点群密度を均一化、元グリッドに再マッピング |
 
 ### パラメータ指定例
 
 #### ROS1
 
 ```bash
-rosrun laser_scan_normalizer laser_scan_normalizer_node _resampling_method:=polar _resampler_distance_threshold:=0.03
+# 間引きのみ（デフォルト）
+rosrun laser_scan_normalizer laser_scan_normalizer_node _resampler_distance_threshold:=0.03
+
+# 補間あり
+rosrun laser_scan_normalizer laser_scan_normalizer_node _enable_interpolation:=true
 ```
 
 #### ROS2
 
 ```bash
-ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p resampling_method:=polar -p resampler_distance_threshold:=0.03
+# 間引きのみ（デフォルト）
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p resampler_distance_threshold:=0.03
+
+# 補間あり
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p enable_interpolation:=true
 ```
 
 ## トピックのリマップ

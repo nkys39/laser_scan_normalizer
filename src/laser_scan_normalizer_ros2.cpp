@@ -9,22 +9,22 @@ LaserScanNormalizerROS2::LaserScanNormalizerROS2(const rclcpp::NodeOptions& opti
 : rclcpp::Node("laser_scan_normalizer", options) {
   // Declare and get parameters
   this->declare_parameter<bool>("enable_resampling", true);
-  this->declare_parameter<std::string>("resampling_method", "xy");
+  this->declare_parameter<bool>("enable_interpolation", false);
   this->declare_parameter<double>("resampler_distance_threshold", 0.05);
   this->declare_parameter<double>("resampler_length_threshold", 0.25);
 
   bool enable_resampling = this->get_parameter("enable_resampling").as_bool();
-  std::string resampling_method = this->get_parameter("resampling_method").as_string();
+  bool enable_interpolation = this->get_parameter("enable_interpolation").as_bool();
   double dthreS = this->get_parameter("resampler_distance_threshold").as_double();
   double dthreL = this->get_parameter("resampler_length_threshold").as_double();
 
   // Configure processor
   processor_.setEnableResampling(enable_resampling);
-  processor_.setResamplingMethod(resampling_method);
+  processor_.setEnableInterpolation(enable_interpolation);
   if (enable_resampling) {
     processor_.setResamplerParameters(dthreS, dthreL);
-    RCLCPP_INFO(this->get_logger(), "Resampling enabled: method=%s, dthreS=%.3f, dthreL=%.3f",
-                resampling_method.c_str(), dthreS, dthreL);
+    RCLCPP_INFO(this->get_logger(), "Resampling enabled: interpolation=%s, dthreS=%.3f, dthreL=%.3f",
+                enable_interpolation ? "true" : "false", dthreS, dthreL);
   } else {
     RCLCPP_INFO(this->get_logger(), "Resampling disabled");
   }

@@ -13,17 +13,17 @@ public:
   LaserScanNormalizerROS1() : nh_(), pnh_("~") {
     // Load parameters
     bool enable_resampling = pnh_.param<bool>("enable_resampling", true);
-    std::string resampling_method = pnh_.param<std::string>("resampling_method", "xy");
+    bool enable_interpolation = pnh_.param<bool>("enable_interpolation", false);
     double dthreS = pnh_.param<double>("resampler_distance_threshold", 0.05);
     double dthreL = pnh_.param<double>("resampler_length_threshold", 0.25);
 
     // Configure processor
     processor_.setEnableResampling(enable_resampling);
-    processor_.setResamplingMethod(resampling_method);
+    processor_.setEnableInterpolation(enable_interpolation);
     if (enable_resampling) {
       processor_.setResamplerParameters(dthreS, dthreL);
-      ROS_INFO("Resampling enabled: method=%s, dthreS=%.3f, dthreL=%.3f",
-               resampling_method.c_str(), dthreS, dthreL);
+      ROS_INFO("Resampling enabled: interpolation=%s, dthreS=%.3f, dthreL=%.3f",
+               enable_interpolation ? "true" : "false", dthreS, dthreL);
     } else {
       ROS_INFO("Resampling disabled");
     }

@@ -25,14 +25,6 @@ using LaserScan = sensor_msgs::msg::LaserScan;
 #endif
 
 /**
- * @brief リサンプリング方式
- */
-enum class ResamplingMethod {
-  XY,    // 方式A: XY座標変換方式（補間あり）
-  POLAR  // 方式B: 極座標直接処理方式（間引きのみ）
-};
-
-/**
  * @brief LaserScan processing utility class
  *
  * This class provides common processing functions for LaserScan messages.
@@ -42,7 +34,7 @@ class LaserScanProcessor {
 public:
   LaserScanProcessor()
     : enable_resampling_(true)
-    , resampling_method_(ResamplingMethod::XY)
+    , enable_interpolation_(false)
     , dthreS_(0.05)
     , dthreL_(0.25)
     , resampler_(0.05, 0.25) {}
@@ -55,23 +47,12 @@ public:
   }
 
   /**
-   * @brief リサンプリング方式を設定
-   * @param method リサンプリング方式
+   * @brief 補間の有効/無効を設定
+   * @param enable true: 補間あり（XY変換→リサンプリング→元グリッド再マッピング）
+   *               false: 間引きのみ（デフォルト）
    */
-  void setResamplingMethod(ResamplingMethod method) {
-    resampling_method_ = method;
-  }
-
-  /**
-   * @brief リサンプリング方式を文字列で設定
-   * @param method "xy" or "polar"
-   */
-  void setResamplingMethod(const std::string& method) {
-    if (method == "polar") {
-      resampling_method_ = ResamplingMethod::POLAR;
-    } else {
-      resampling_method_ = ResamplingMethod::XY;
-    }
+  void setEnableInterpolation(bool enable) {
+    enable_interpolation_ = enable;
   }
 
   /**
@@ -111,10 +92,10 @@ public:
 
     // Step 2: Resample points if enabled
     if (enable_resampling_) {
-      if (resampling_method_ == ResamplingMethod::XY) {
-        output = resampleScanXY(output);
+      if (enable_interpolation_) {
+        output = resampleWithInterpolation(output);
       } else {
-        output = resampleScanPolar(output);
+        output = resamplePolarOnly(output);
       }
     }
 
@@ -123,7 +104,7 @@ public:
 
 private:
   bool enable_resampling_;
-  ResamplingMethod resampling_method_;
+  bool enable_interpolation_;
   double dthreS_;
   double dthreL_;
   mutable ScanPointResampler resampler_;
@@ -136,12 +117,11 @@ private:
   }
 
   /**
-   * @brief 方式B: 極座標直接処理方式（間引きのみ）
+   * @brief 間引きのみ（補間なし）- デフォルト
    *
    * LaserScanの構造を維持しながら、近すぎる点を無効化（間引き）する。
-   * 補間はできないが、オーバーヘッドが少ない。
    */
-  LaserScan resampleScanPolar(const LaserScan& input) const {
+  LaserScan resamplePolarOnly(const LaserScan& input) const {
     LaserScan output = input;
 
     if (output.ranges.size() < 2) {
@@ -190,99 +170,64 @@ private:
   }
 
   /**
-   * @brief 方式A: XY座標変換方式
+   * @brief 補間あり - XY変換→リサンプリング→元グリッド再マッピング
+   *
+   * XY座標でリサンプリング（補間あり）を行い、結果を元のangle_incrementグリッドに
+   * 再マッピングする。歪みなし。
    */
-  LaserScan resampleScanXY(const LaserScan& input) const {
-    // LaserScan → XY座標
-    std::vector<Point2D> points = laserScanToPoints(input);
+  LaserScan resampleWithInterpolation(const LaserScan& input) const {
+    // Step 1: LaserScan → XY座標（インデックス情報付き）
+    std::vector<Point2D> points;
+    std::vector<size_t> originalIndices;  // 元のインデックスを保持
+    points.reserve(input.ranges.size());
+    originalIndices.reserve(input.ranges.size());
+
+    for (size_t i = 0; i < input.ranges.size(); ++i) {
+      float range = input.ranges[i];
+
+      if (!std::isfinite(range) || range < input.range_min || range > input.range_max) {
+        continue;
+      }
+
+      double angle = input.angle_min + i * input.angle_increment;
+      double x = range * std::cos(angle);
+      double y = range * std::sin(angle);
+      points.emplace_back(x, y);
+      originalIndices.push_back(i);
+    }
 
     if (points.size() < 2) {
       return input;
     }
 
-    // リサンプリング
+    // Step 2: XY座標でリサンプリング
     resampler_.resamplePoints(points);
 
-    // XY座標 → LaserScan
-    return pointsToLaserScan(points, input);
-  }
-
-  /**
-   * @brief LaserScanをXY座標に変換
-   */
-  std::vector<Point2D> laserScanToPoints(const LaserScan& scan) const {
-    std::vector<Point2D> points;
-    points.reserve(scan.ranges.size());
-
-    for (size_t i = 0; i < scan.ranges.size(); ++i) {
-      float range = scan.ranges[i];
-
-      // Skip invalid ranges
-      if (!std::isfinite(range) || range < scan.range_min || range > scan.range_max) {
-        continue;
-      }
-
-      double angle = scan.angle_min + i * scan.angle_increment;
-      double x = range * std::cos(angle);
-      double y = range * std::sin(angle);
-      points.emplace_back(x, y);
+    // Step 3: 元グリッドに再マッピング
+    LaserScan output = input;
+    // 全てをinfinityで初期化
+    for (size_t i = 0; i < output.ranges.size(); ++i) {
+      output.ranges[i] = std::numeric_limits<float>::infinity();
     }
+    output.intensities.clear();
 
-    return points;
-  }
-
-  /**
-   * @brief XY座標をLaserScanに変換
-   */
-  LaserScan pointsToLaserScan(const std::vector<Point2D>& points,
-                               const LaserScan& original) const {
-    LaserScan output;
-    output.header = original.header;
-    output.range_min = original.range_min;
-    output.range_max = original.range_max;
-    output.scan_time = original.scan_time;
-    output.time_increment = original.time_increment;
-
-    if (points.empty()) {
-      output.angle_min = original.angle_min;
-      output.angle_max = original.angle_max;
-      output.angle_increment = original.angle_increment;
-      return output;
-    }
-
-    // 各点の角度とrangeを計算
-    std::vector<std::pair<double, double>> angle_range_pairs;
-    angle_range_pairs.reserve(points.size());
-
+    // リサンプリング後の各点を元グリッドにマッピング
     for (const auto& p : points) {
       double range = std::sqrt(p.x * p.x + p.y * p.y);
       double angle = std::atan2(p.y, p.x);
-      angle_range_pairs.emplace_back(angle, range);
+
+      // 元グリッドでの最近傍インデックスを計算
+      double index_float = (angle - input.angle_min) / input.angle_increment;
+      int index = static_cast<int>(std::round(index_float));
+
+      // 範囲チェック
+      if (index >= 0 && index < static_cast<int>(output.ranges.size())) {
+        // 既に値がある場合は近い方を採用
+        if (!std::isfinite(output.ranges[index]) || range < output.ranges[index]) {
+          output.ranges[index] = static_cast<float>(range);
+        }
+      }
     }
-
-    // 角度でソート
-    std::sort(angle_range_pairs.begin(), angle_range_pairs.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    // 角度範囲を設定
-    output.angle_min = angle_range_pairs.front().first;
-    output.angle_max = angle_range_pairs.back().first;
-
-    if (angle_range_pairs.size() > 1) {
-      output.angle_increment = (output.angle_max - output.angle_min) /
-                               (angle_range_pairs.size() - 1);
-    } else {
-      output.angle_increment = original.angle_increment;
-    }
-
-    // ranges配列を設定
-    output.ranges.reserve(angle_range_pairs.size());
-    for (const auto& pair : angle_range_pairs) {
-      output.ranges.push_back(static_cast<float>(pair.second));
-    }
-
-    // intensitiesがある場合は空にする（リサンプリングで対応が崩れるため）
-    output.intensities.clear();
 
     return output;
   }
