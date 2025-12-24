@@ -8,7 +8,7 @@ ScanPointResamplerは、レーザースキャンの点群を均等な間隔に�
 ## 機能
 
 - 点群を指定した距離間隔でリサンプリング
-- 点間隔が大きい場合は補間点を生成
+- 点間隔が大きい場合は補間点を生成（方式Aのみ）
 - 点間隔が小さい場合は間引き
 
 ## アルゴリズム
@@ -28,13 +28,13 @@ ScanPointResamplerは、レーザースキャンの点群を均等な間隔に�
 │   → 現在の点をそのまま追加（補間しない）         │
 ├─────────────────────────────────────────────────┤
 │ Case 3: dthreS <= 累積距離 + 点間距離 < dthreL   │
-│   → 補間点を計算して追加                         │
+│   → 補間点を計算して追加（方式Aのみ）            │
 └─────────────────────────────────────────────────┘
   ↓
 出力: リサンプリング済み点群
 ```
 
-### 補間点の計算
+### 補間点の計算（方式Aのみ）
 
 2点間(pp → cp)で補間点を生成する場合:
 
@@ -53,8 +53,10 @@ np.y = pp.y + dy * ratio
 
 | パラメータ | デフォルト値 | 説明 |
 |-----------|-------------|------|
-| `dthreS` | 0.05 m (5cm) | リサンプリング後の目標点間隔 |
-| `dthreL` | 0.25 m (25cm) | 最大点間隔（これ以上離れた点は補間せず保持） |
+| `enable_resampling` | true | リサンプリングの有効/無効 |
+| `resampling_method` | "xy" | リサンプリング方式 ("xy" or "polar") |
+| `resampler_distance_threshold` (dthreS) | 0.05 m (5cm) | リサンプリング後の目標点間隔 |
+| `resampler_length_threshold` (dthreL) | 0.25 m (25cm) | 最大点間隔（これ以上離れた点は補間せず保持） |
 
 ### パラメータの関係
 
@@ -62,108 +64,109 @@ np.y = pp.y + dy * ratio
 - `dthreS`が小さいほど密な点群になる
 - `dthreL`は不連続な領域（物体の境界など）を検出する閾値として機能
 
-## 実装方針
+## リサンプリング方式
 
-### 1. データ型の変換
+### 方式A: XY座標変換方式 (`resampling_method: "xy"`)
 
-元のコードは独自の`Scan2D`/`LPoint2D`型を使用しているため、`sensor_msgs/LaserScan`用に変換が必要。
-
-**元のコード:**
-```cpp
-struct LPoint2D {
-    int sid;      // スキャンID
-    double x, y;  // XY座標
-};
-
-struct Scan2D {
-    std::vector<LPoint2D> lps;
-};
+```
+入力: sensor_msgs/LaserScan
+  ↓
+1. LaserScan → XY座標変換
+   x[i] = ranges[i] * cos(angle_min + i * angle_increment)
+   y[i] = ranges[i] * sin(angle_min + i * angle_increment)
+  ↓
+2. XY座標でリサンプリング（元のアルゴリズム適用）
+   - 累積距離ベースで点を間引き/補間
+  ↓
+3. XY座標 → LaserScan変換
+   - リサンプリング後の点数に応じてangle_incrementを再計算
+   - range[i] = sqrt(x[i]^2 + y[i]^2)
+   - angle[i] = atan2(y[i], x[i])
+  ↓
+出力: sensor_msgs/LaserScan（点数が変化する可能性あり）
 ```
 
-**LaserScanでの対応:**
-- LaserScanは極座標形式（angle, range）
-- XY座標への変換が必要: `x = range * cos(angle)`, `y = range * sin(angle)`
-- または直接range配列を処理する方式も検討
+**特徴:**
+- 元のアルゴリズムを忠実に再現
+- 補間点の生成が可能
+- 座標変換のオーバーヘッドあり
+- 出力のLaserScanは点数が変化する可能性あり
 
-### 2. 実装アプローチの選択肢
+### 方式B: 極座標直接処理方式 (`resampling_method: "polar"`)
 
-#### 方式A: XY座標変換方式
-
-```cpp
-// LaserScan → XY座標に変換 → リサンプリング → LaserScan に戻す
+```
+入力: sensor_msgs/LaserScan
+  ↓
+1. ranges配列を直接走査
+2. 隣接点間の距離を余弦定理で計算
+   L = sqrt(r1^2 + r2^2 - 2*r1*r2*cos(angle_diff))
+3. 累積距離がdthreS未満の点をinfinityで無効化（間引き）
+  ↓
+出力: sensor_msgs/LaserScan（構造維持、一部rangeがinfinity）
 ```
 
-- メリット: 元のアルゴリズムをほぼそのまま適用可能
-- デメリット: 座標変換のオーバーヘッド、角度情報の再計算が必要
+**特徴:**
+- LaserScanの構造（angle_min, angle_max, angle_increment）を維持
+- 間引きのみ（補間は不可）
+- オーバーヘッドが少ない
+- intensitiesとの対応関係を維持可能
 
-#### 方式B: 極座標直接処理方式（推奨）
+### 方式の比較
 
-```cpp
-// range配列を直接処理（角度方向の隣接点間距離でリサンプリング）
-```
+| 項目 | 方式A (xy) | 方式B (polar) |
+|------|-----------|---------------|
+| 補間 | ○ 可能 | × 不可 |
+| 間引き | ○ 可能 | ○ 可能 |
+| LaserScan構造維持 | × 変化する | ○ 維持 |
+| オーバーヘッド | 大 | 小 |
+| intensities | × 破棄 | ○ 維持可能 |
+| 用途 | 高精度リサンプリング | 軽量フィルタリング |
 
-- メリット: 変換オーバーヘッドなし、LaserScanの構造を維持
-- デメリット: アルゴリズムの一部修正が必要
-
-### 3. 推奨実装方針
-
-**方式B（極座標直接処理）を推奨**
-
-理由:
-- LaserScanは等角度間隔のデータ構造であり、出力も同じ構造を維持すべき
-- リサンプリングの目的（点群密度の正規化）は、range値のフィルタリングで達成可能
-- パフォーマンスが良い
-
-### 4. 実装箇所
+## 実装ファイル
 
 ```
 include/laser_scan_normalizer/
-├── laser_scan_normalizer.hpp      # LaserScanProcessor に処理を追加
-└── scan_point_resampler.hpp       # (新規) リサンプラークラス
+├── laser_scan_normalizer.hpp      # LaserScanProcessor（方式A/B両対応）
+└── scan_point_resampler.hpp       # ScanPointResampler（XY座標用）
 
 src/
-├── laser_scan_normalizer_ros1.cpp # パラメータ読み込み追加
-└── laser_scan_normalizer_ros2.cpp # パラメータ読み込み追加
+├── laser_scan_normalizer_ros1.cpp # ROS1ノード（パラメータ対応）
+└── laser_scan_normalizer_ros2.cpp # ROS2ノード（パラメータ対応）
 ```
 
-### 5. インターフェース案
+## 使用例
 
-```cpp
-class ScanPointResampler {
-public:
-    ScanPointResampler(double dthreS = 0.05, double dthreL = 0.25);
+### ROS1
 
-    void setParameters(double distanceThreshold, double lengthThreshold);
+```bash
+# 方式A（デフォルト）
+rosrun laser_scan_normalizer laser_scan_normalizer_node
 
-    // LaserScan用のリサンプリング
-    void resample(sensor_msgs::LaserScan& scan);
+# 方式B
+rosrun laser_scan_normalizer laser_scan_normalizer_node _resampling_method:=polar
 
-private:
-    double dthreS_;  // 目標点間隔 [m]
-    double dthreL_;  // 最大点間隔 [m]
-
-    // 2点間の距離計算（極座標）
-    double calcDistance(double range1, double range2, double angle_diff);
-};
+# パラメータ変更
+rosrun laser_scan_normalizer laser_scan_normalizer_node \
+  _resampling_method:=xy \
+  _resampler_distance_threshold:=0.03 \
+  _resampler_length_threshold:=0.20
 ```
 
-### 6. ROSパラメータ
+### ROS2
 
-```yaml
-# パラメータ例
-laser_scan_normalizer:
-  ros__parameters:
-    resampler_distance_threshold: 0.05  # dthreS [m]
-    resampler_length_threshold: 0.25    # dthreL [m]
-    enable_resampling: true
+```bash
+# 方式A（デフォルト）
+ros2 run laser_scan_normalizer laser_scan_normalizer_node
+
+# 方式B
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p resampling_method:=polar
+
+# パラメータ変更
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args \
+  -p resampling_method:=xy \
+  -p resampler_distance_threshold:=0.03 \
+  -p resampler_length_threshold:=0.20
 ```
-
-## 次のステップ
-
-1. `scan_point_resampler.hpp`の作成
-2. `LaserScanProcessor`への統合
-3. ROS1/ROS2パラメータ対応
-4. テストの作成
 
 ## 参考
 

@@ -33,6 +33,34 @@ ros2 run laser_scan_normalizer laser_scan_normalizer_node
 ros2 component standalone laser_scan_normalizer laser_scan_normalizer::LaserScanNormalizerROS2
 ```
 
+## パラメータ
+
+| パラメータ | 型 | デフォルト | 説明 |
+|-----------|------|-----------|------|
+| `enable_resampling` | bool | true | リサンプリングの有効/無効 |
+| `resampling_method` | string | "xy" | リサンプリング方式 ("xy" or "polar") |
+| `resampler_distance_threshold` | double | 0.05 | 目標点間隔 [m] |
+| `resampler_length_threshold` | double | 0.25 | 最大点間隔 [m] |
+
+### リサンプリング方式
+
+- **xy**: XY座標変換方式（補間あり）- 元のアルゴリズムを忠実に再現
+- **polar**: 極座標直接処理方式（間引きのみ）- LaserScanの構造を維持、オーバーヘッド小
+
+### パラメータ指定例
+
+#### ROS1
+
+```bash
+rosrun laser_scan_normalizer laser_scan_normalizer_node _resampling_method:=polar _resampler_distance_threshold:=0.03
+```
+
+#### ROS2
+
+```bash
+ros2 run laser_scan_normalizer laser_scan_normalizer_node --ros-args -p resampling_method:=polar -p resampler_distance_threshold:=0.03
+```
+
 ## トピックのリマップ
 
 ### ROS1

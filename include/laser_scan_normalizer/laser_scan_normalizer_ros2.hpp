@@ -5,6 +5,7 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <laser_scan_normalizer/laser_scan_normalizer.hpp>
 
 namespace laser_scan_normalizer {
 
@@ -21,6 +22,8 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr pub_scan_;
+
+  LaserScanProcessor processor_;
 };
 
 }  // namespace laser_scan_normalizer
